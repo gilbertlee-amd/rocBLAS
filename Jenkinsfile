@@ -234,7 +234,7 @@ def docker_build_inside_image( def build_image, compiler_data compiler_args, doc
                 set -x
                 cd ${paths.project_build_prefix}/build/release/clients/staging
                 LD_LIBRARY_PATH=/opt/rocm/hcc/lib ./example-sscal${build_type_postfix}
-                LD_LIBRARY_PATH=/opt/rocm/hcc/lib ./rocblas-test${build_type_postfix} --gtest_output=xml --gtest_color=yes  --gtest_filter=*quick*:*pre_checkin*-*known_bug* #--gtest_filter=*checkin* 
+                LD_LIBRARY_PATH=/opt/rocm/hcc/lib ./rocblas-test${build_type_postfix} --gtest_output=xml --gtest_color=yes  --gtest_filter=*quick*-*known_bug* #--gtest_filter=*checkin* 
             """
           junit "${paths.project_build_prefix}/build/release/clients/staging/*.xml"
         }
@@ -560,7 +560,7 @@ def build_pipeline( compiler_data compiler_args, docker_data docker_args, projec
 //},
 parallel rocm19_ubuntu:
 {
-  node( 'docker && rocm19 && gfx900')
+  node( 'docker && rocm19_test && gfx900')
   {
     def hcc_docker_args = new docker_data(
         from_image:'rocm/dev-ubuntu-16.04:1.9.0',
