@@ -734,3 +734,102 @@ INSTANTIATE_TEST_CASE_P(nightly_blas_ex_resnet50_bwddata_int8,
                                 ValuesIn(resnet50_bwddata_alpha_beta_range),
                                 ValuesIn(resnet50_bwddata_transA_transB_range),
                                 ValuesIn(precision_int8)));
+
+// Debugging (All-ones matrices)
+// Simple test cases running on matrices full of ones
+TEST(DebugTest, Int8AllOnesMatrices)
+{
+    rocblas_local_handle handle;
+    rocblas_gemm_algo algo = rocblas_gemm_algo_standard;
+    int32_t solution_index;
+    rocblas_int flags;
+    size_t* workspace_size = 0;
+    void* workspace;
+    rocblas_status status;
+
+    // Parameters
+    const int32_t alpha = 1;
+    const int32_t beta  = 1;
+    const rocblas_operation transA = rocblas_operation_none;
+    const rocblas_operation transB = rocblas_operation_none;
+
+    const int M = (getenv("INT8_M") ? atoi(getenv("INT8_M")) : 9);
+    const int N = (getenv("INT8_N") ? atoi(getenv("INT8_N")) : 1);
+    const int K = (getenv("INT8_K") ? atoi(getenv("INT8_K")) : 4);
+
+    printf("Testing M = %d N = %d K = %d\n", M, N, K);
+    printf("(Specify with env var: INT8_M, INT8_N, INT8_K)\n");
+    printf("transA = %d transB = %d alpha = %d beta = %d\n", transA, transB, alpha, beta);
+
+    // Set up leading dimensions (based on tranpose type)
+    const rocblas_int lda = (transA == rocblas_operation_none) ? M : K;
+    const rocblas_int ldb = (transB == rocblas_operation_none) ? K : N;
+    const rocblas_int ldc = M;
+    const rocblas_int ldd = M;
+
+    // Allocate CPU memory
+    host_vector<int8_t>  hA(M * K);
+    host_vector<int8_t>  hB(K * N);
+    host_vector<int32_t> hC(M * N);
+    host_vector<int32_t> hD(M * N);
+
+    // Initialize CPU matrices
+    for(int i = 0; i < M * K; i++) hA[i] = 1;
+    for(int i = 0; i < K * N; i++) hB[i] = 1;
+    for(int i = 0; i < M * N; i++) hC[i] = 0;
+    for(int i = 0; i < M * N; i++) hD[i] = 0;
+
+    // Allocate GPU memory
+    device_vector<int8_t>  dA(M * K);
+    device_vector<int8_t>  dB(K * N);
+    device_vector<int32_t> dC(M * N);
+    device_vector<int32_t> dD(M * N);
+
+    // Copy CPU memory into GPU memory
+    hipMemcpy(dA, hA, M * K * sizeof(int8_t), hipMemcpyHostToDevice);
+    hipMemcpy(dB, hB, K * N * sizeof(int8_t), hipMemcpyHostToDevice);
+    hipMemcpy(dC, hC, M * N * sizeof(int32_t), hipMemcpyHostToDevice);
+    hipMemcpy(dD, hD, M * N * sizeof(int32_t), hipMemcpyHostToDevice);
+
+    // Call rocBLAS
+    status = rocblas_gemm_ex(handle,
+                             transA,
+                             transB,
+                             M,
+                             N,
+                             K,
+                             &alpha,
+                             dA,
+                             rocblas_datatype_i8_r,
+                             lda,
+                             dB,
+                             rocblas_datatype_i8_r,
+                             ldb,
+                             &beta,
+                             dC,
+                             rocblas_datatype_i32_r,
+                             ldc,
+                             dD,
+                             rocblas_datatype_i32_r,
+                             ldd,
+                             rocblas_datatype_i32_r,
+                             algo,
+                             solution_index,
+                             flags,
+                             workspace_size,
+                             workspace);
+
+    // Check for success
+    EXPECT_EQ(status, rocblas_status_success);
+
+    // Copy results back to host
+    hipMemcpy(hD, dD, M * N * sizeof(int32_t), hipMemcpyDeviceToHost);
+
+    // The expected value at each element is K
+    bool isMatch = true;
+    for(int i = 0; i < M * N; i++)
+    {
+        isMatch &= (hD[i] == K);
+    }
+                             EXPECT_EQ(isMatch, true);
+}
